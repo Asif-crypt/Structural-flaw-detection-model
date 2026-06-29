@@ -1,0 +1,6 @@
+path: data/yolo_dataset
+train: train/images
+val: valid/images
+
+names:
+  0: crack

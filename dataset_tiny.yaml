@@ -1,0 +1,6 @@
+path: C:\Users\Admin\Downloads\Structural\data\yolo_dataset_tiny
+train: train/images
+val: valid/images
+
+names:
+  0: crack
