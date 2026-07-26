@@ -9,12 +9,18 @@ if not os.path.exists(model_path):
 
 model = YOLO(model_path)
 
+import torch
+device = "cuda" if torch.cuda.is_available() else "cpu"
+if device == "cuda":
+    model.to("cuda")
+
 # Predict on the test image
 test_img = "data/crack_detection/test.jpg"
 results = model.predict(
     source=test_img,
     save=True,
-    conf=0.01 # Since it's trained for only 3 epochs, confidence might be low
+    conf=0.01, # Since it's trained for only 3 epochs, confidence might be low
+    device=device,
 )
 
 print("Prediction Complete")

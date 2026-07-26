@@ -149,21 +149,25 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ----------- Tabs -----------
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🔍 Image Analysis",
     "📊 Risk Assessment",
     "🧠 Explainable AI",
-    "📄 AI Report & PDF"
+    "📄 AI Report & PDF",
+    "📈 Model Performance",
+    "💬 Chat with AI"
 ])
 
 # =============== TAB 1: IMAGE ANALYSIS ===============
 with tab1:
-    st.markdown('<div class="section-header">Upload Crack Image for Analysis</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Upload Image for Analysis</div>', unsafe_allow_html=True)
+    img_type = st.radio("Select Image Type", ["Standard (RGB)", "Thermal / IR"], horizontal=True)
+
     col1, col2 = st.columns([1, 2])
 
     with col1:
-        uploaded = st.file_uploader("Choose a crack image", type=["jpg", "jpeg", "png"], key="img_upload")
-        use_sample = st.button("▶ Use Sample Crack Image")
+        uploaded = st.file_uploader(f"Choose a {img_type} image", type=["jpg", "jpeg", "png"], key="img_upload")
+        use_sample = st.button("▶ Use Sample Image")
 
     img_bytes = None
     img_name = None
@@ -186,44 +190,69 @@ with tab1:
             st.error("FastAPI backend is unavailable. Start uvicorn main:app --reload before using image analysis.")
             st.stop()
 
-        with st.spinner("Running analysis through the FastAPI backend..."):
-            backend_result = analyze_image_backend(img_bytes, img_name or "image.jpg")
-
-        annotated = decode_backend_image(backend_result["annotated_image_b64"])
-        colored_mask = decode_backend_image(backend_result["mask_image_b64"])
-        n_det = backend_result["count"]
-        crack_area = backend_result["crack_area"]
-        total_px = backend_result["total_px"]
-        density = backend_result["density"]
-        
-        # Link to Risk Assessment tab
-        st.session_state["image_crack_density"] = float(density)
-        if n_det > 0:
-            avg_area = crack_area / n_det
-            st.session_state["image_crack_width"] = round(min(10.0, max(0.1, avg_area / 500.0)), 1)
-        else:
-            st.session_state["image_crack_width"] = 0.0
-
-        col_a, col_b = st.columns(2)
-        with col_a:
-            st.markdown("**YOLOv8 Detection**")
-            st.image(annotated, use_container_width=True)
-            st.caption(f"Detected {n_det} crack region(s) with confidence ≥ 0.25")
-
-        with col_b:
-            st.markdown("**U-Net Segmentation Mask**")
+        if img_type == "Thermal / IR":
+            with st.spinner("Running thermal anomaly analysis..."):
+                files = {"file": (img_name or "image.jpg", img_bytes)}
+                response = requests.post(f"{BACKEND_URL}/analyze_thermal", files=files, timeout=20)
+                response.raise_for_status()
+                backend_result = response.json()
+            
+            colored_mask = decode_backend_image(backend_result["mask_image_b64"])
+            anomaly_area = backend_result["anomaly_area"]
+            density = backend_result["density"]
+            
+            st.markdown("**Thermal Anomaly Overlay (Moisture/Heat)**")
             st.image(colored_mask, use_container_width=True)
+            
+            st.markdown("---")
+            m1, m2 = st.columns(2)
+            with m1:
+                st.markdown(f'<div class="metric-card"><div class="metric-label">Anomaly Coverage</div><div class="metric-value">{density}%</div></div>', unsafe_allow_html=True)
+            with m2:
+                st.markdown(f'<div class="metric-card"><div class="metric-label">Anomaly Pixels</div><div class="metric-value">{anomaly_area:,}</div></div>', unsafe_allow_html=True)
 
-            st.caption(f"Crack coverage: {density}% of image area")
+        else:
+            with st.spinner("Running analysis through the FastAPI backend..."):
+                backend_result = analyze_image_backend(img_bytes, img_name or "image.jpg")
 
-        st.markdown("---")
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            st.markdown(f'<div class="metric-card"><div class="metric-label">Crack Regions</div><div class="metric-value">{n_det}</div><div class="metric-sub">YOLOv8 detections</div></div>', unsafe_allow_html=True)
-        with m2:
-            st.markdown(f'<div class="metric-card"><div class="metric-label">Crack Coverage</div><div class="metric-value">{density}%</div><div class="metric-sub">of image area</div></div>', unsafe_allow_html=True)
-        with m3:
-            st.markdown(f'<div class="metric-card"><div class="metric-label">Crack Pixels</div><div class="metric-value">{crack_area:,}</div><div class="metric-sub">binary mask pixels</div></div>', unsafe_allow_html=True)
+            annotated = decode_backend_image(backend_result["annotated_image_b64"])
+            colored_mask = decode_backend_image(backend_result["mask_image_b64"])
+            n_det = backend_result["count"]
+            crack_area = backend_result["crack_area"]
+            total_px = backend_result["total_px"]
+            density = backend_result["density"]
+            max_crack_depth = backend_result.get("max_crack_depth", 0.0)
+            
+            # Link to Risk Assessment tab
+            st.session_state["image_crack_density"] = float(density)
+            if n_det > 0:
+                avg_area = crack_area / n_det
+                st.session_state["image_crack_width"] = round(min(10.0, max(0.1, avg_area / 500.0)), 1)
+            else:
+                st.session_state["image_crack_width"] = 0.0
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.markdown("**YOLOv8 Detection**")
+                st.image(annotated, use_container_width=True)
+                st.caption(f"Detected {n_det} crack region(s) with confidence ≥ 0.25")
+
+            with col_b:
+                st.markdown("**U-Net Segmentation Mask**")
+                st.image(colored_mask, use_container_width=True)
+
+                st.caption(f"Crack coverage: {density}% of image area")
+
+            st.markdown("---")
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                st.markdown(f'<div class="metric-card"><div class="metric-label">Crack Regions</div><div class="metric-value">{n_det}</div><div class="metric-sub">YOLO detections</div></div>', unsafe_allow_html=True)
+            with m2:
+                st.markdown(f'<div class="metric-card"><div class="metric-label">Crack Coverage</div><div class="metric-value">{density}%</div><div class="metric-sub">of image area</div></div>', unsafe_allow_html=True)
+            with m3:
+                st.markdown(f'<div class="metric-card"><div class="metric-label">Crack Pixels</div><div class="metric-value">{crack_area:,}</div><div class="metric-sub">binary mask</div></div>', unsafe_allow_html=True)
+            with m4:
+                st.markdown(f'<div class="metric-card"><div class="metric-label">Est. Depth</div><div class="metric-value">{max_crack_depth}mm</div><div class="metric-sub">heuristic-based</div></div>', unsafe_allow_html=True)
 
 # =============== TAB 2: RISK ASSESSMENT ===============
 with tab2:
@@ -384,6 +413,125 @@ with tab4:
                 mime="application/pdf"
             )
 
+# =============== TAB 5: MODEL PERFORMANCE ===============
+with tab5:
+    st.markdown('<div class="section-header">Model Performance Evaluation</div>', unsafe_allow_html=True)
+    st.markdown("Evaluation metrics computed on a held-out test split (20%) of the training data.")
+
+    if not backend_is_available():
+        st.error("FastAPI backend is unavailable. Start the backend to view model performance.")
+    else:
+        with st.spinner("Computing model metrics..."):
+            try:
+                perf_resp = requests.get(f"{BACKEND_URL}/model_performance", timeout=30)
+                perf_resp.raise_for_status()
+                perf = perf_resp.json()
+
+                # ---------- SHI Regressor ----------
+                st.markdown("### 📊 SHI Regressor (XGBoost)")
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.markdown(f'<div class="metric-card"><div class="metric-label">Test MAE</div><div class="metric-value">{perf["shi"]["mae"]:.2f}</div><div class="metric-sub">points (lower = better)</div></div>', unsafe_allow_html=True)
+                with c2:
+                    st.markdown(f'<div class="metric-card"><div class="metric-label">Test RMSE</div><div class="metric-value">{perf["shi"]["rmse"]:.2f}</div><div class="metric-sub">points</div></div>', unsafe_allow_html=True)
+                with c3:
+                    st.markdown(f'<div class="metric-card"><div class="metric-label">R² Score</div><div class="metric-value">{perf["shi"]["r2"]:.3f}</div><div class="metric-sub">1.0 = perfect fit</div></div>', unsafe_allow_html=True)
+
+                st.markdown("---")
+
+                # ---------- Risk Classifier ----------
+                st.markdown("### 🚦 Risk Classifier (XGBoost)")
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    st.markdown(f'<div class="metric-card"><div class="metric-label">Accuracy</div><div class="metric-value">{perf["risk"]["accuracy"]:.1%}</div><div class="metric-sub">correct classifications</div></div>', unsafe_allow_html=True)
+                with c2:
+                    st.markdown(f'<div class="metric-card"><div class="metric-label">Precision</div><div class="metric-value">{perf["risk"]["precision"]:.3f}</div><div class="metric-sub">weighted avg</div></div>', unsafe_allow_html=True)
+                with c3:
+                    st.markdown(f'<div class="metric-card"><div class="metric-label">Recall</div><div class="metric-value">{perf["risk"]["recall"]:.3f}</div><div class="metric-sub">weighted avg</div></div>', unsafe_allow_html=True)
+                with c4:
+                    st.markdown(f'<div class="metric-card"><div class="metric-label">F1 Score</div><div class="metric-value">{perf["risk"]["f1"]:.3f}</div><div class="metric-sub">weighted avg</div></div>', unsafe_allow_html=True)
+
+                # Confusion matrix
+                st.markdown("#### Confusion Matrix")
+                import numpy as np
+                cm = np.array(perf["risk"]["confusion_matrix"])
+                labels = ["Safe", "Moderate", "Critical"]
+
+                fig, ax = plt.subplots(figsize=(5, 4))
+                im = ax.imshow(cm, cmap="Blues")
+                ax.set_xticks(range(3)); ax.set_yticks(range(3))
+                ax.set_xticklabels(labels); ax.set_yticklabels(labels)
+                ax.set_xlabel("Predicted", fontsize=11)
+                ax.set_ylabel("Actual", fontsize=11)
+                ax.set_title("Risk Classifier Confusion Matrix", fontsize=12)
+                for i in range(3):
+                    for j in range(3):
+                        ax.text(j, i, str(cm[i, j]), ha="center", va="center",
+                                color="white" if cm[i, j] > cm.max() / 2 else "black", fontsize=14, fontweight="bold")
+                fig.colorbar(im)
+                plt.tight_layout()
+                col_cm, _ = st.columns([1, 1])
+                with col_cm:
+                    st.pyplot(fig)
+                plt.close()
+
+                st.markdown("---")
+
+                # ---------- RUL Regressor ----------
+                st.markdown("### ⏱️ RUL Regressor (Random Forest)")
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.markdown(f'<div class="metric-card"><div class="metric-label">Test MAE</div><div class="metric-value">{perf["rul"]["mae"]:.2f}</div><div class="metric-sub">years (lower = better)</div></div>', unsafe_allow_html=True)
+                with c2:
+                    st.markdown(f'<div class="metric-card"><div class="metric-label">Test RMSE</div><div class="metric-value">{perf["rul"]["rmse"]:.2f}</div><div class="metric-sub">years</div></div>', unsafe_allow_html=True)
+                with c3:
+                    st.markdown(f'<div class="metric-card"><div class="metric-label">R² Score</div><div class="metric-value">{perf["rul"]["r2"]:.3f}</div><div class="metric-sub">1.0 = perfect fit</div></div>', unsafe_allow_html=True)
+
+                st.markdown("---")
+
+                # ---------- U-Net ----------
+                st.markdown("### 📷 U-Net Segmentation Model")
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown(f'<div class="metric-card"><div class="metric-label">Best Dice Score</div><div class="metric-value">{perf["unet"]["best_dice"]:.4f}</div><div class="metric-sub">0-1 scale (higher = better)</div></div>', unsafe_allow_html=True)
+                with c2:
+                    st.markdown(f'<div class="metric-card"><div class="metric-label">Architecture</div><div class="metric-value" style="font-size:1.1rem">TinyU-Net</div><div class="metric-sub">{perf["unet"]["params"]:,} parameters</div></div>', unsafe_allow_html=True)
+
+            except Exception as e:
+                st.error(f"Failed to fetch model metrics: {e}")
+
+# =============== TAB 6: CHAT WITH AI ===============
+with tab6:
+    st.markdown('<div class="section-header">💬 Chat with the Inspector</div>', unsafe_allow_html=True)
+    
+    if "agent_recommendation" not in st.session_state:
+        st.warning("Please run the Risk Assessment first to generate the building report context for the AI.")
+    else:
+        if "messages" not in st.session_state:
+            st.session_state.messages = []
+            
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+                
+        if prompt := st.chat_input("Ask a question about the inspection report..."):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+                
+            context = st.session_state["agent_recommendation"]
+            
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    try:
+                        resp = requests.post(f"{BACKEND_URL}/chat", json={"query": prompt, "context": context}, timeout=30)
+                        resp.raise_for_status()
+                        answer = resp.json()["response"]
+                        st.markdown(answer)
+                        st.session_state.messages.append({"role": "assistant", "content": answer})
+                    except Exception as e:
+                        st.error(f"Error communicating with backend: {e}")
+
 # ----------- Sidebar -----------
 with st.sidebar:
     st.markdown("## 🏗️ StructuralAI")
@@ -391,7 +539,7 @@ with st.sidebar:
     st.markdown("### 📌 System Status")
 
     checks = {
-        "YOLOv8 Model": os.path.exists("runs/detect/train/weights/best.pt") or os.path.exists("yolov8n.pt"),
+        "YOLOv8 Model": os.path.exists("runs/detect/train/weights/best.pt") or os.path.exists("models/best.pt") or os.path.exists("yolov8n.pt"),
         "U-Net Model": os.path.exists("models/unet/best_unet.pth"),
         "ML Models": os.path.exists("models/ml/shi_regressor.pkl"),
         "SHAP Plots": os.path.exists("outputs/shap/shi_shap_bar.png"),

@@ -5,6 +5,8 @@ import torch.nn as nn
 import numpy as np
 import pandas as pd
 
+_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
 
 class DoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -53,10 +55,11 @@ class TinyUNet(nn.Module):
 def run_unet_segmentation(image_path, model_path=None):
     """Runs the trained U-Net model on an image and returns the binary crack mask."""
     if model_path is None:
-        model_path = os.path.join("models", "unet", "best_unet.pth")
+        model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "unet", "best_unet.pth")
 
     model = TinyUNet()
-    model.load_state_dict(torch.load(model_path, map_location="cpu"))
+    model.load_state_dict(torch.load(model_path, map_location=_DEVICE, weights_only=True))
+    model.to(_DEVICE)
     model.eval()
 
     image = cv2.imread(image_path)
@@ -65,11 +68,12 @@ def run_unet_segmentation(image_path, model_path=None):
     image_resized = cv2.resize(image, (128, 128))
 
     image_tensor = torch.tensor(image_resized, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0) / 255.0
+    image_tensor = image_tensor.to(_DEVICE)
 
     with torch.no_grad():
         output = model(image_tensor)
 
-    mask = output.squeeze().numpy()
+    mask = output.squeeze().cpu().numpy()
     mask = (mask > 0.5).astype(np.uint8) * 255
     # Resize back to original
     mask = cv2.resize(mask, (orig_w, orig_h))

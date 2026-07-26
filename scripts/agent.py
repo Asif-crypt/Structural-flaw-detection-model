@@ -1,22 +1,27 @@
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 import joblib
 import pandas as pd
 
 try:
-    from langchain.schema import HumanMessage
-    from langchain_openai import ChatOpenAI
+    from langchain_core.messages import HumanMessage
+    from langchain_google_genai import ChatGoogleGenerativeAI
 
     LANGCHAIN_AVAILABLE = True
 except ImportError:
     LANGCHAIN_AVAILABLE = False
 
+_BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 
 def load_models():
-    shi_model = joblib.load("models/ml/shi_regressor.pkl")
-    risk_model = joblib.load("models/ml/risk_classifier.pkl")
-    rul_model = joblib.load("models/ml/rul_regressor.pkl")
-    metadata = joblib.load("models/ml/metadata.pkl")
+    shi_model = joblib.load(os.path.join(_BASE, "models", "ml", "shi_regressor.pkl"))
+    risk_model = joblib.load(os.path.join(_BASE, "models", "ml", "risk_classifier.pkl"))
+    rul_model = joblib.load(os.path.join(_BASE, "models", "ml", "rul_regressor.pkl"))
+    metadata = joblib.load(os.path.join(_BASE, "models", "ml", "metadata.pkl"))
     return shi_model, risk_model, rul_model, metadata
 
 
@@ -111,7 +116,7 @@ RECOMMENDED ACTIONS
 
 
 def llm_recommendation(inputs: dict, predictions: dict, api_key: str) -> str:
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3, api_key=api_key)
+    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.3, google_api_key=api_key)
     prompt = f"""You are a senior structural health monitoring engineer. Analyze the following building inspection data and provide a professional technical report with clear findings and actionable recommendations.
 
 BUILDING DATA:
@@ -139,10 +144,14 @@ def analyze_structure(inputs: dict) -> tuple:
     shi_model, risk_model, rul_model, metadata = load_models()
     predictions = predict_structural_metrics(inputs, shi_model, risk_model, rul_model, metadata)
 
-    api_key = os.environ.get("OPENAI_API_KEY", "")
+    api_key = os.environ.get("GEMINI_API_KEY", "")
     if api_key and LANGCHAIN_AVAILABLE:
         print("Using LLM mode.")
-        recommendation = llm_recommendation(inputs, predictions, api_key)
+        try:
+            recommendation = llm_recommendation(inputs, predictions, api_key)
+        except Exception as e:
+            print(f"LLM failed ({e}), falling back to rule-based mode.")
+            recommendation = rule_based_recommendation(inputs, predictions)
     else:
         print("Using rule-based mode.")
         recommendation = rule_based_recommendation(inputs, predictions)
